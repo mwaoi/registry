@@ -200,7 +200,9 @@ class CliAgentTarget:
     executable = None
     #: One line for the targets table.
     note = ""
-    #: Whether this harness lets the operator pin a model.
+    #: Whether this harness lets the operator pin a model. Set it True when `argv` passes
+    #: `self.model` on: `model_requested()` reads it, so a harness left False records the
+    #: model as unrecorded whatever `--model` says.
     supports_model = False
     #: Set when the harness cannot be trusted to choose a model for itself, so the scan
     #: refuses to run without `--model` rather than carrying a default of its own. A default
@@ -256,8 +258,10 @@ class CliAgentTarget:
         self.model = model
 
     def model_requested(self):
-        """What to record as the model. Only ever what we asked for, never a guess."""
-        return self.model or None
+        """What to record as the model. Only ever what we asked for, never a guess, and
+        only when this harness can be told to use it. One that cannot runs on its own
+        default, so the name it was given would record a model that never ran."""
+        return (self.model or None) if self.supports_model else None
 
     # ---- subclasses implement these two ----
 
