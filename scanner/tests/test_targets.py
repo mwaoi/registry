@@ -494,6 +494,56 @@ def test_an_unpinned_harness_records_nothing_rather_than_guessing():
     check("the model stays unknown", t.model_requested() is None)
 
 
+def test_a_harness_that_cannot_be_pinned_never_records_the_model_it_was_given():
+    """`--model` reaches every harness, but only one that can be pinned passes it on. One
+    that cannot runs on its own default, so recording the name would publish a model that
+    never ran."""
+    from guardian_scanner import results
+
+    class Unpinnable(targets.CliAgentTarget):
+        name = "unpinnable"
+
+        def argv(self, prompt, config_path):
+            return ["unpinnable", "--prompt", prompt, "--mcp-config", config_path]
+
+    class FakeResult:
+        pattern_id, target_name = "GP-0003", "unpinnable"
+        runs, successes, errors = 20, 0, 0
+
+    t = Unpinnable(model="made-up-model")
+    check("the harness cannot be pinned", Unpinnable.supports_model is False)
+    check("so the model it was given is not reported", t.model_requested() is None,
+          repr(t.model_requested()))
+    folder = tempfile.mkdtemp()
+    try:
+        path = results.record([FakeResult()], folder, sensor_on=False,
+                              date="2026-11-06", target=t)[0]
+        doc = json.load(open(path))
+        check("and the result file says unrecorded",
+              doc["target"]["model"] == "unrecorded", str(doc["target"]))
+        check("in its name as well", "made-up-model" not in os.path.basename(path),
+              os.path.basename(path))
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def test_a_harness_passes_the_model_on_exactly_when_it_says_it_can_be_pinned():
+    """What gets recorded follows `supports_model`, so it has to match what `argv` does. A
+    harness that passes the model on but says it cannot be pinned would record a real model
+    as unrecorded."""
+    for name, cls in sorted(targets.CLASSES.items()):
+        if not issubclass(cls, targets.CliAgentTarget):
+            continue
+        t = targets.REGISTRY[name](model="probe-model")
+        folder = tempfile.mkdtemp()
+        try:
+            passed = "probe-model" in t.argv("hello", t.mcp_config(LAB, folder, {}))
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+        check(f"{name} passes the model on only if it can be pinned",
+              passed == bool(cls.supports_model), f"passes it on: {passed}")
+
+
 def test_the_scripted_controls_have_no_model_at_all():
     for kind in ("vulnerable", "hardened"):
         t = targets.scripted(kind)
